@@ -1,0 +1,9 @@
+fastapi
+streamlit
+uvicorn
+pymongo
+scikit-learn == 1.5.2
+joblib
+numpy
+pandas
+pydantic
