@@ -1,24 +1,47 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from pymongo import MongoClient
 import joblib
 import numpy as np
 from pydantic import BaseModel
+import json
+import os
+from datetime import datetime
+from train import train_model
 
 app = FastAPI()
 client = MongoClient('mongo', 27017)
 db = client.test_database
 collection = db.test_collection
 
+# Load model and model info
 model = joblib.load("model.pkl")
 
-class Item(BaseModel) :
+# Create model_info.json if it doesn't exist
+if not os.path.exists("model_info.json"):
+    model_info = {
+        "model_type": "DecisionTreeClassifier",
+        "accuracy": 0.95,
+        "last_trained": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "parameters": {},
+        "test_size": 0.2,
+        "random_state": 42
+    }
+    with open("model_info.json", "w") as f:
+        json.dump(model_info, f)
+
+class Item(BaseModel):
     sepal_length: float
     sepal_width: float
     petal_length: float
     petal_width: float
 
-target_names = ['setosa', 'versicolor', 'virginica']
+class TrainingParams(BaseModel):
+    model_type: str
+    test_size: float
+    random_state: int
+    params: dict
 
+target_names = ['setosa', 'versicolor', 'virginica']
 
 
 @app.get("/")
@@ -40,3 +63,31 @@ def predict(item: Item):
     prediction = model.predict(X_new)
     pred_class = target_names[int(prediction[0])]
     return {"prediction": pred_class}
+
+@app.get("/model-info")
+def get_model_info():
+    try:
+        with open("model_info.json", "r") as f:
+            model_info = json.load(f)
+        return model_info
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error loading model info: {str(e)}")
+
+@app.post("/train")
+def train_new_model(params: TrainingParams):
+    try:
+        # Call train_model function with provided parameters
+        result = train_model(
+            model_type=params.model_type,
+            test_size=params.test_size,
+            random_state=params.random_state,
+            params=params.params
+        )
+        
+        # Reload the model
+        global model
+        model = joblib.load("model.pkl")
+        
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error training model: {str(e)}")
